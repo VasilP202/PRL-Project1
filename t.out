@@ -1,0 +1,49 @@
+1 Queue max size: 1
+2 Queue max size: 2
+Processor 2 0 2
+Numbers read from file:
+3 93 103 198 41 31 
+First processor sent number: 31 to processor 1
+First processor sent number: 41 to processor 1
+First processor sent number: 198 to processor 1
+First processor sent number: 103 to processor 1
+First processor sent number: 93 to processor 1
+First processor sent number: 3 to processor 1
+Processor 1 received number up: 31 from processor 0
+Processor 1 received number down: 41 from processor 0
+0
+Processor 1 sent number: (0) 31 to processor 2
+Processor 1 sent number: (0) 41 to processor 2
+Processor 1 received number up: 198 from processor 0
+Processor 1 received number down: 103 from processor 0
+1
+Processor 1 sent number: (1) 103 to processor 2
+Processor 2 received number up: 31 from processor 1
+Processor 2 1 2
+Processor 2 received number down: 103 from processor 1
+Processor 2 1 2
+0
+Processor 2 sent number: (0) 31 to processor 3
+Processor 2 0 2
+Processor 2 sent number: (0) 103 to processor 3
+Processor 2 0 2
+Processor 2 0 2
+Processor 2 received number up: 41 from processor 1
+Processor 2 1 2
+Processor 2 received number down: 198 from processor 1
+Processor 2 1 2
+1
+Processor 2 sent number: (1) 41 to processor 3
+Processor 2 0 2
+Processor 2 sent number: (1) 198 to processor 3
+Processor 2 0 2
+Processor 1 sent number: (1) 198 to processor 2
+Processor 1 received number up: 93 from processor 0
+Processor 1 received number down: 3 from processor 0
+0
+Processor 1 sent number: (0) 3 to processor 2
+Processor 1 sent number: (0) 93 to processor 2
+Last processor received number: (0) 31 from processor 2
+Last processor received number: (1) 41 from processor 2
+Last processor received number: (0) 103 from processor 2
+Last processor received number: (1) 198 from processor 2

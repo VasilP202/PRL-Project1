@@ -52,8 +52,6 @@ int main(int argc, char *argv[]) {
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 
-  printf("Hello from %d of %d\n", mpi_rank, mpi_size);
-
   if (mpi_rank == 0) {
     // First processor
     vector<unsigned char> input_numbers = readNumbersFromFile();
@@ -62,20 +60,20 @@ int main(int argc, char *argv[]) {
     int queue_current = QUEUE_UP;
     // Sequentially send numbers down the pipeline
     for (int i = input_numbers.size() - 1; i >= 0; i--){
-      MPI_Send(&input_numbers[i], 1, MPI_UNSIGNED_CHAR, 1, queue_current, // TODO fix
-               MPI_COMM_WORLD);
-      cout << "First processor sent number: " << static_cast<int>(input_numbers[i]) << endl;
+      MPI_Send(&input_numbers[i], 1, MPI_UNSIGNED_CHAR, 1, queue_current, MPI_COMM_WORLD);
+      cout << "First processor sent number: " << static_cast<int>(input_numbers[i]) << " to processor 1" << endl;
+  
       queue_current = (queue_current + 1) % 2;
     }
   } else if (mpi_rank == mpi_size - 1) {
     // Last processor
     // While the queue is not empty, receive numbers from the previous processor
     int queue_current = QUEUE_UP;
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < total_numbers; ++i) {
       unsigned char recv_number;
       MPI_Recv(&recv_number, 1, MPI_UNSIGNED_CHAR, mpi_rank - 1, queue_current,
                MPI_COMM_WORLD, &status);
-      cout << "Last processor received number: " << static_cast<int>(recv_number) << endl;
+      cout << "Last processor received number: (" << queue_current << ") " << static_cast<int>(recv_number) << " from processor " << mpi_rank - 1 << endl;
       queue_current = (queue_current + 1) % 2;
     }
 
@@ -92,53 +90,79 @@ int main(int argc, char *argv[]) {
     int queue_current = QUEUE_UP;
     
     while (processed < total_numbers) {
+      if (mpi_rank == 2) {
+        cout << "Processor " << mpi_rank << " " << queue_up->size() << " " << queue_max_size << endl;
+      }
       if (queue_up->size() < queue_max_size) {
         unsigned char recv_number;
         for (int i = 0; i < queue_max_size - queue_up->size(); i++) {
-            if (mpi_rank == 2)
-              cout << "Processor " << mpi_rank << " waiting for number up" << endl;
+          MPI_Recv(&recv_number, 1, MPI_UNSIGNED_CHAR, mpi_rank - 1, QUEUE_UP, MPI_COMM_WORLD, &status);
+          cout << "Processor " << mpi_rank << " received number up: " << static_cast<int>(recv_number) << " from processor " << mpi_rank - 1 << endl;
           
-            MPI_Recv(&recv_number, 1, MPI_UNSIGNED_CHAR, mpi_rank - 1, QUEUE_UP, MPI_COMM_WORLD, &status);
-            cout << "Processor " << mpi_rank << " received number up: " << static_cast<int>(recv_number) << endl;
-            queue_up->push(recv_number);  
+          queue_up->push(recv_number);  
+          if (mpi_rank == 2) {
+            cout << "Processor " << mpi_rank << " " << queue_up->size() << " " << queue_max_size << endl;
+          }
         }
       }
       if (queue_down->size() < 1) {
         unsigned char recv_number;
-        if (mpi_rank == 2)
-          cout << "Processor " << mpi_rank << " waiting for number down" << endl;
         MPI_Recv(&recv_number, 1, MPI_UNSIGNED_CHAR, mpi_rank - 1, QUEUE_DOWN, MPI_COMM_WORLD, &status);
-        cout << "Processor " << mpi_rank << " received number down: " << static_cast<int>(recv_number) << endl;
+        cout << "Processor " << mpi_rank << " received number down: " << static_cast<int>(recv_number) << " from processor " << mpi_rank - 1 << endl;
+        
         queue_down->push(recv_number);
+          if (mpi_rank == 2) {
+            cout << "Processor " << mpi_rank << " " << queue_up->size() << " " << queue_max_size << endl;
+          }
       }
 
       // Now we are sure we have enough elements to continue
-
 
       for (int k=0; k < queue_max_size; k++) {
         cout << queue_current << endl;
         if (queue_up->front() < queue_down->front()){
           MPI_Send(&queue_up->front(), 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_current, MPI_COMM_WORLD);
-          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_up->front()) << endl;
+          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_up->front()) << " to processor " << mpi_rank + 1 << endl;
+      
           queue_up->pop();
+          if (mpi_rank == 2) {
+            cout << "Processor " << mpi_rank << " " << queue_up->size() << " " << queue_max_size << endl;
+          }
+
           MPI_Send(&queue_down->front(), 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_current, MPI_COMM_WORLD);
-          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_down->front()) << endl;
+          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_down->front()) << " to processor " << mpi_rank + 1 << endl;
+      
           queue_down->pop();
+          if (mpi_rank == 2) {
+            cout << "Processor " << mpi_rank << " " << queue_up->size() << " " << queue_max_size << endl;
+        
+          }
         } else {
           MPI_Send(&queue_down ->front(), 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_current, MPI_COMM_WORLD);
-          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_down->front()) << endl;
+          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_down->front()) << " to processor " << mpi_rank + 1 << endl;
+          
           queue_down->pop();
+          if (mpi_rank == 2) {
+            cout << "Processor " << mpi_rank << " " << queue_up->size() << " " << queue_max_size << endl;
+        
+          }
           MPI_Send(&queue_up->front(), 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_current, MPI_COMM_WORLD);
-          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_up->front()) << endl;
+          cout << "Processor " << mpi_rank << " sent number: (" << queue_current << ") " << static_cast<int>(queue_up->front()) << " to processor " << mpi_rank + 1 << endl;
+          
           queue_up->pop();
+          if (mpi_rank == 2) {
+            cout << "Processor " << mpi_rank << " " << queue_up->size() << " " << queue_max_size << endl;
+        
+          }
         }
       }
       queue_current = (queue_current + 1) % 2;
-      // Recieve the 
+      // Receive the 
       processed += queue_max_size*2;
     }
   }
 
+  //MPI_Barrier(MPI_COMM_WORLD); // Synchronize all processes before finalizing
   MPI_Finalize();
   return 0;
 }
