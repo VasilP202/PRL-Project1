@@ -4,13 +4,12 @@
 #include <iostream>
 #include <queue>
 #include <vector>
+#include <unistd.h>
 
 static int mpi_rank, mpi_size;
 
 static int QUEUE_UP = 0;
 static int QUEUE_DOWN = 1;
-
-static int numbers_total_count = 6;
 
 using namespace std;
 
@@ -35,32 +34,21 @@ std::vector<unsigned char> readNumbersFromFile() {
 
   file.close();         // Close the file
 
+  //return input_numbers; // Return the vector
   //unsigned char arr[] = {5, 2, 9, 4, 7, 6, 8, 1};
-  //std::vector<unsigned char> vec(arr, arr + sizeof(arr)/sizeof(arr[0]));
-  //return vec;
-  return input_numbers; // Return the vector
+  unsigned char arr[] = {139, 126, 207, 134, 62, 81, 184, 156}; 
+  std::vector<unsigned char> vec(arr, arr + sizeof(arr)/sizeof(arr[0]));
+  return vec;
 }
 
 void printNumbers(vector<unsigned char> &input_numbers) {
-  cout << "Numbers read from file:" << endl;
   for (size_t i = 0; i < input_numbers.size(); ++i) {
-    cout << static_cast<int>(input_numbers[i]) << " "; // Print each number
+    cout << static_cast<int>(input_numbers[i]) << " ";
   }
   cout << endl;
 }
 
-int main(int argc, char *argv[]) {
-  MPI_Status status;
-
-  MPI_Init(&argc, &argv);
-  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
-
-  if (mpi_rank == 0) {
-    // First processor
-    vector<unsigned char> input_numbers = readNumbersFromFile();
-    printNumbers(input_numbers);
-
+void firstProcessor(vector<unsigned char> &input_numbers) {
     int queue_current = QUEUE_UP;
     // Sequentially send numbers down the pipeline
     for (int i = input_numbers.size() - 1; i >= 0; i--) {
@@ -68,8 +56,11 @@ int main(int argc, char *argv[]) {
                MPI_COMM_WORLD);
       queue_current = (queue_current + 1) % 2;
     }
-  } else if (mpi_rank == mpi_size - 1) {
-    // Last processor
+}
+
+void lastProcessor(int numbers_total_count ) {
+    MPI_Status status;
+
     static int queue_max_size = pow(2, mpi_rank - 1);
     int queue_current = QUEUE_UP;
     int numbers_processed_count = 0;
@@ -80,12 +71,10 @@ int main(int argc, char *argv[]) {
     bool ready_to_compare = false;
 
     while (numbers_processed_count < numbers_total_count) {
-      printf("Last processor: %d\n", numbers_processed_count);
       unsigned char recv_number;
       if (queue_current_received < numbers_total_count) {
         MPI_Recv(&recv_number, 1, MPI_UNSIGNED_CHAR, mpi_rank - 1, queue_current, MPI_COMM_WORLD, &status);
         queue_current_received++;
-        printf("Last processor received number (%d): %d from processor %d\n", queue_current, static_cast<int>(recv_number), mpi_rank - 1);
         queues[queue_current].push(recv_number);
       }
       if (queues[QUEUE_UP].size() == queue_max_size && queues[QUEUE_DOWN].size() == 1)
@@ -95,23 +84,17 @@ int main(int argc, char *argv[]) {
         // We can compare numbers
         unsigned char number_up = queues[QUEUE_UP].front();
         unsigned char number_down = queues[QUEUE_DOWN].front();
-        printf("Last processor has enough numbers to compare: %d and %d\n", static_cast<int>(number_up), static_cast<int>(number_down));
 
         if (number_up < number_down) {
           output_numbers.push_back(number_up);
           queues[QUEUE_UP].pop();
-          printf("Pushing %d \n", static_cast<int>(number_up));
         } else {
           output_numbers.push_back(number_down);
           queues[QUEUE_DOWN].pop();
-          printf("Pushing %d \n", static_cast<int>(number_down));
-
         } 
         numbers_processed_count++;
       }
       if ((queues[QUEUE_DOWN].empty() || queues[QUEUE_UP].empty()) && (numbers_total_count - numbers_processed_count <= queue_max_size)) {
-        // Send the remaining numbers to the last processor
-        printf("Last processor has remaining numbers %d\n", numbers_total_count - numbers_processed_count);
         int queue_empty = queues[QUEUE_DOWN].empty() ? QUEUE_DOWN : QUEUE_UP;
 
         while (!queues[!queue_empty].empty()) {
@@ -127,96 +110,60 @@ int main(int argc, char *argv[]) {
     }
 
     // Write the output numbers to stdout
-    cout << "Numbers sorted in ascending order:" << endl;
     for (size_t i = 0; i < output_numbers.size(); ++i) {
-      cout << static_cast<int>(output_numbers[i]) << " ";
+      cout << static_cast<int>(output_numbers[i]) << endl;
     }
+}
 
-  } else {
-    // Middle processors
+void middleProcessor(int numbers_total_count) {
+    MPI_Status status;
     queue<unsigned char> queues[2];
 
-    int numbers_processed_count = 0;
     static int queue_max_size = pow(2, mpi_rank - 1);
+
+    int numbers_processed_count = 0;
     int queue_input_current = QUEUE_UP;
     int queue_output_current = QUEUE_UP;
-    int queue_current_sent = 0;
     int queue_current_received = 0;
-
-    int current_number;
 
     bool ready_to_compare = false;
 
     while (numbers_processed_count < numbers_total_count) {
-      unsigned char recv_number;
-      MPI_Recv(&recv_number, 1, MPI_UNSIGNED_CHAR, mpi_rank - 1, queue_input_current, MPI_COMM_WORLD, &status);
-      queue_current_received++;
-      printf("Processor %d received number (%d): %d from processor %d\n", mpi_rank, queue_input_current, static_cast<int>(recv_number), mpi_rank - 1);
-      queues[queue_input_current].push(recv_number);
-
-      if (queues[QUEUE_UP].size() == queue_max_size && queues[QUEUE_DOWN].size() == 1)
-        ready_to_compare = true;
-
-      if (ready_to_compare && !queues[QUEUE_UP].empty() && !queues[QUEUE_DOWN].empty()){
-        printf("\nProcessor %d has enough numbers to send\n", mpi_rank);
-        // We can compare numbers
-        unsigned char number_up = queues[QUEUE_UP].front();
-        unsigned char number_down = queues[QUEUE_DOWN].front();
-
-        if (number_up < number_down) {
-          MPI_Send(&number_up, 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_output_current, MPI_COMM_WORLD);
-          printf("Processor %d sent number (%d): %d to processor %d\n", mpi_rank, queue_output_current, static_cast<int>(number_up), mpi_rank + 1);
-          queues[QUEUE_UP].pop();
-          MPI_Send(&number_down, 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_output_current, MPI_COMM_WORLD);
-          printf("Processor %d sent number (%d): %d to processor %d\n", mpi_rank, queue_output_current, static_cast<int>(number_down), mpi_rank + 1);
-          queues[QUEUE_DOWN].pop();
-          queue_current_sent += 2;
-        } else {
-          MPI_Send(&number_down, 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_output_current, MPI_COMM_WORLD);
-          printf("Processor %d sent number (%d): %d to processor %d\n", mpi_rank, queue_output_current, static_cast<int>(number_down), mpi_rank + 1);
-          queues[QUEUE_DOWN].pop();
-          MPI_Send(&number_up, 1, MPI_UNSIGNED_CHAR, mpi_rank + 1, queue_output_current, MPI_COMM_WORLD);
-          printf("Processor %d sent number (%d): %d to processor %d\n", mpi_rank, queue_output_current, static_cast<int>(number_up), mpi_rank + 1);
-          queues[QUEUE_UP].pop();
-          queue_current_sent += 2;
-        }
-        printf("\n");
-        numbers_processed_count += 2;
-      }
-        //printf("%d processed count: %d, current sent: %d\n", mpi_rank, numbers_processed_count, queue_current_sent);
-
-      if (queue_current_sent == queue_max_size * 2) {
-        // Switch to the other output queue
-        queue_output_current = (queue_output_current + 1) % 2;
-        queue_current_sent = 0;
-        //printf("%d switched to output queue %d\n", mpi_rank, queue_output_current);
-      }
-      if (queue_current_received == queue_max_size) {
-        // Switch the input queue
-        queue_input_current = (queue_input_current + 1) % 2;
-        queue_current_received = 0;
-        //printf("%d switched to input queue %d\n", mpi_rank, queue_input_current);
-      }
-
-      if (mpi_rank == 2) {
-        printf("Queue up size: %d, Queue down size: %d\n", queues[QUEUE_UP].size(), queues[QUEUE_DOWN].size());
-        printf("%d %d %d %d %d\n", queues[QUEUE_DOWN].empty(), queues[QUEUE_UP].empty(), numbers_total_count, numbers_processed_count, queue_max_size);
-      }
-
-      if (queues[QUEUE_DOWN].empty() && !queues[QUEUE_UP].empty() && (numbers_total_count - numbers_processed_count <= queue_max_size)) {
-        if (mpi_rank == 2)
-        printf("Processor %d has remaining numbers %d\n", mpi_rank,numbers_total_count - numbers_processed_count );
-        // Send the remaining numbers to the last processor
-        while (!queues[QUEUE_UP].empty()) {
-          unsigned char number = queues[QUEUE_UP].front();
-          MPI_Send(&number, 1, MPI_UNSIGNED_CHAR, mpi_size - 1, queue_output_current, MPI_COMM_WORLD);
-          printf("Processor %d sent number (%d): %d to processor %d\n", mpi_rank, queue_output_current, static_cast<int>(number), mpi_size - 1);
-          queues[QUEUE_UP].pop();
-          queue_current_sent++;
-          numbers_processed_count++;
-        }
-      }
     }
+}
+int main(int argc, char *argv[]) {
+
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+
+  vector<unsigned char> input_numbers;
+
+  if (mpi_rank == 0) {
+    // First processor
+    input_numbers = readNumbersFromFile();
+    printNumbers(input_numbers);
+  }
+
+  // Broadcast the size of input_numbers to all processors
+  int numbers_total_count;
+  if (mpi_rank == 0) {
+    numbers_total_count = input_numbers.size();
+  }
+  MPI_Bcast(&numbers_total_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  // Allocate memory for input_numbers in all processors
+  input_numbers.resize(numbers_total_count);
+
+  // Broadcast the input_numbers to all processors
+  //MPI_Bcast(input_numbers.data(), numbers_total_count, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
+
+  if (mpi_rank == 0) {
+    firstProcessor(input_numbers);
+  } else if (mpi_rank == mpi_size - 1) {
+    lastProcessor(numbers_total_count);
+  } else {
+    middleProcessor(numbers_total_count);
   }
 
   MPI_Barrier(MPI_COMM_WORLD); // Synchronize all processes before finalizing
